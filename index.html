@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register Player</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <div class="container py-5">
+    <h3 class="text-center mb-4">🏏 Register New Player</h3>
+    <div class="card p-4 shadow-sm mx-auto" style="max-width: 400px;">
+      <form id="playerForm">
+        <div class="mb-3">
+          <label class="form-label">Player ID (Auto-generated)</label>
+          <input type="number" id="playerId" class="form-control" readonly>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Player Name</label>
+          <input type="text" id="playerName" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-success w-100">Register</button>
+      </form>
+      <div id="msg" class="mt-3 text-center"></div>
+
+      <div class="d-flex flex-column gap-2 mt-3">
+        <a href="attendance.html" class="btn btn-outline-primary w-100">📋 Go to Attendance</a>
+        <a href="index.html" class="btn btn-outline-secondary w-100">🏠 Back to Home</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "https://sheetdb.io/api/v1/r2kmti83dy9ps"; // Your SheetDB Players API
+    let existingPlayers = []; // Store all players for validation
+
+    // Function to get next available ID (1–200) and load existing players
+    async function generateNextId() {
+      try {
+        const res = await fetch(API_URL);
+        const data = await res.json();
+        
+        // Store existing players for name validation
+        existingPlayers = data;
+        
+        const existingIds = data.map(p => parseInt(p.id)).filter(Boolean);
+        let nextId = 1;
+        while (existingIds.includes(nextId) && nextId <= 200) {
+          nextId++;
+        }
+        document.getElementById("playerId").value = nextId <= 200 ? nextId : "Limit Reached";
+      } catch (err) {
+        console.error("Error loading IDs:", err);
+        document.getElementById("playerId").value = "Error";
+      }
+    }
+
+    // Check if player name already exists (case-insensitive, trim whitespace)
+    function isNameDuplicate(newName) {
+      const normalizedNewName = newName.trim().toLowerCase();
+      return existingPlayers.some(player => 
+        player.name.trim().toLowerCase() === normalizedNewName
+      );
+    }
+
+    // Call on page load
+    generateNextId();
+
+    document.getElementById("playerForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = document.getElementById("playerId").value;
+      const name = document.getElementById("playerName").value.trim();
+      
+      // Validation checks
+      if (!name || !id || id === "Limit Reached" || id === "Error") return;
+
+      // Check for duplicate name
+      if (isNameDuplicate(name)) {
+        document.getElementById("msg").innerHTML = `<span class="text-danger">❌ Player name "${name}" already exists!</span>`;
+        return;
+      }
+
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ data: [{ id, name }] })
+      });
+
+      if (response.ok) {
+        document.getElementById("msg").innerHTML = `<span class="text-success">✅ Player #${id} added successfully!</span>`;
+        document.getElementById("playerForm").reset();
+        generateNextId(); // Reload players and generate next ID
+      } else {
+        document.getElementById("msg").innerHTML = `<span class="text-danger">❌ Error saving data!</span>`;
+      }
+    });
+  </script>
+</body>
+</html>

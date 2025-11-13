@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attendance</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .submitted-row {
+      background-color: #d4edda;
+      opacity: 0.7;
+    }
+    .submitted-row select {
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <h3 class="text-center mb-3">📋 Player Attendance</h3>
+    <div class="text-center mb-3">
+      <strong>Today's Date:</strong> <span id="todayDate"></span>
+    </div>
+
+    <!-- Player List -->
+    <div id="playerList" class="card p-3 shadow-sm mb-4"></div>
+
+    <!-- Navigation -->
+    <div class="text-center">
+      <a href="index.html" class="btn btn-outline-secondary w-100">➕ Register New Player</a>
+    </div>
+
+    <div id="msg" class="mt-3 text-center"></div>
+  </div>
+
+  <script>
+    const API_PLAYERS = "https://sheetdb.io/api/v1/r2kmti83dy9ps";
+    const API_ATTENDANCE = "https://sheetdb.io/api/v1/bva8ex5io2jns";
+
+    const playerList = document.getElementById("playerList");
+    const todayDate = new Date().toLocaleDateString('en-GB');
+    
+    // Display today's date
+    document.getElementById("todayDate").textContent = todayDate;
+
+    let submittedToday = new Set(); // Track which players submitted today
+
+    // Check if player already submitted attendance today
+    async function checkTodayAttendance() {
+      try {
+        const res = await fetch(API_ATTENDANCE);
+        const allAttendance = await res.json();
+        
+        // Filter attendance records for today
+        submittedToday = new Set(
+          allAttendance
+            .filter(record => record.date === todayDate)
+            .map(record => record.player_id)
+        );
+        
+        console.log("Already submitted today:", Array.from(submittedToday));
+      } catch (error) {
+        console.error("Error checking attendance:", error);
+      }
+    }
+
+    // Load all players from Player Sheet
+    async function loadPlayers() {
+      await checkTodayAttendance(); // Check who submitted today first
+      
+      try {
+        const res = await fetch(API_PLAYERS);
+        const data = await res.json();
+
+        if (!data.length) {
+          playerList.innerHTML = `<div class="text-center text-muted">No players registered yet.</div>`;
+          return;
+        }
+
+        playerList.innerHTML = data.map(p => {
+          const alreadySubmitted = submittedToday.has(String(p.id));
+          const rowClass = alreadySubmitted ? 'submitted-row' : '';
+          const buttonDisabled = alreadySubmitted ? 'disabled' : '';
+          
+          return `
+          <div class="d-flex justify-content-between align-items-center border-bottom py-2 ${rowClass}" id="row-${p.id}">
+            <div class="flex-grow-1">
+              <span class="fw-bold">#${p.id}</span>
+              <span class="fw-semibold ms-2">${p.name}</span>
+              ${alreadySubmitted ? '<span class="badge bg-success ms-2">✓ Submitted</span>' : ''}
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+              <select id="att-${p.id}" class="form-select" style="width: 100px;" ${alreadySubmitted ? 'disabled' : ''}>
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+              <button 
+                onclick="submitAttendance('${p.id}', '${p.name}')" 
+                class="btn btn-sm btn-primary ${buttonDisabled}"
+                id="btn-${p.id}"
+                ${alreadySubmitted ? 'disabled' : ''}
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        `;
+        }).join('');
+      } catch (error) {
+        playerList.innerHTML = `<div class="text-danger text-center">⚠️ Failed to load players.</div>`;
+        console.error("Load error:", error);
+      }
+    }
+
+    // Submit individual player attendance
+    window.submitAttendance = async function(playerId, playerName) {
+      const statusSelect = document.getElementById(`att-${playerId}`);
+      const status = statusSelect.value;
+
+      if (!status) {
+        alert("Please select Yes or No!");
+        return;
+      }
+
+      try {
+        const now = new Date();
+        const date = now.toLocaleDateString('en-GB');
+        const time = now.toLocaleTimeString('en-US', { hour12: true });
+
+        const attendanceData = [{
+          player_id: String(playerId),
+          player_name: String(playerName),
+          status: status,
+          date: date,
+          time: time
+        }];
+
+        console.log("Submitting:", attendanceData);
+
+        const response = await fetch(API_ATTENDANCE, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({ data: attendanceData })
+        });
+
+        const result = await response.json();
+        console.log("Response:", result);
+
+        if (response.ok && result.created) {
+          // Mark as submitted
+          const row = document.getElementById(`row-${playerId}`);
+          const btn = document.getElementById(`btn-${playerId}`);
+          
+          row.classList.add('submitted-row');
+          statusSelect.disabled = true;
+          btn.disabled = true;
+          btn.textContent = '✓ Done';
+          
+          // Add badge
+          const nameDiv = row.querySelector('.flex-grow-1');
+          if (!nameDiv.querySelector('.badge')) {
+            nameDiv.innerHTML += ' <span class="badge bg-success ms-2">✓ Submitted</span>';
+          }
+
+          document.getElementById("msg").innerHTML = `<span class="text-success">✅ Attendance saved for ${playerName}!</span>`;
+          
+          // Clear message after 3 seconds
+          setTimeout(() => {
+            document.getElementById("msg").innerHTML = '';
+          }, 3000);
+          
+        } else {
+          document.getElementById("msg").innerHTML = `<span class="text-danger">❌ Error: ${result.error || 'Failed to save'}</span>`;
+        }
+      } catch (error) {
+        document.getElementById("msg").innerHTML = `<span class="text-danger">⚠️ Network error!</span>`;
+        console.error("Submit error:", error);
+      }
+    };
+
+    loadPlayers();
+  </script>
+</body>
+</html>
